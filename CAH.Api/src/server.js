@@ -10,6 +10,9 @@ const webSocketServer = require('websocket').server;
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+app.get("/", (req,res)=>{
+    res.send('hello world')
+})
 
 const server = http.createServer(app);
 const wsServer = new webSocketServer({ httpServer: server });
@@ -240,14 +243,6 @@ wsServer.on('request', function (request) {
         
     })
 });
-
-
-
-//   // broadcasting message to all connected clients
-//   for(key in clients) {
-//     clients[key].sendUTF(message.utf8Data);
-//     console.log('sent Message to: ', clients[key]);
-//   }
 
 server.listen(process.env.PORT || 8000, () => {
     console.log(`Server started on port ${server.address().port} :)`);

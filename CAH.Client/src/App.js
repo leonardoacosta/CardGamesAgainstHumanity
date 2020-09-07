@@ -12,7 +12,10 @@ import Game from './Views/Game';
 import Lobby from './Views/Lobby';
 
 import { w3cwebsocket as W3CWebSocket } from "websocket";
-const client = new W3CWebSocket('ws://localhost:8000');
+//const client = new W3CWebSocket('ws://localhost:8000');
+const client = new W3CWebSocket('wss://cardgamesagainsthumanity.azurewebsites.net/');
+
+
 export default function App() {
   
   return (
