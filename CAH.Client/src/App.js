@@ -1,19 +1,19 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React from 'react';
 import {
   BrowserRouter as Router,
   Switch,
   Route } from "react-router-dom";
+import { w3cwebsocket as W3CWebSocket } from "websocket";
 
 import SplashPage from './Views/SplashPage';
-import Setup from './Views/Setup';
-import WaitingScreen from './Views/WaitingScreen';
-import MainGame from './Views/MainGame';
-import Game from './Views/Game';
-import Lobby from './Views/Lobby';
+import Setup from './Views/Master/Setup';
+import WaitingScreen from './Views/Master/WaitingScreen';
+import MainGame from './Views/Master/MainGame';
+import Game from './Views/Client/Game';
+import Lobby from './Views/Client/Lobby';
 
-import { w3cwebsocket as W3CWebSocket } from "websocket";
-//const client = new W3CWebSocket('ws://localhost:8000');
-const client = new W3CWebSocket('wss://cardgamesagainsthumanity.azurewebsites.net/');
+const client = new W3CWebSocket('ws://localhost:8000');
+//const client = new W3CWebSocket('wss://cardgamesagainsthumanity.azurewebsites.net/');
 
 
 export default function App() {

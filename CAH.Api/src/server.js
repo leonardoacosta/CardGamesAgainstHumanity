@@ -20,9 +20,10 @@ const wsServer = new webSocketServer({ httpServer: server });
 const allConnections = {};
 const allRooms = [];
 
-const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+const s = () => Math.floor(Math.random() * Math.floor(1000))
+const s4 = () => s() + s() + s() + s()
 
-const generateConnectionId = () => s4() + s4() + s4() + s4() + s4()
+const generateConnectionId = () => s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4()
 const generateUserId = () => s4() + s4() + s4() + s4()
 const generateRoomId = () => s4()
 
@@ -49,28 +50,32 @@ wsServer.on('request', function (request) {
         if (obj.type === 'newRoom') {
             var roomId = generateRoomId();
 
-            //send it back to master
-            var payload = {
-                type: "newRoom",
-                roomId: roomId,
-                masterConnection: connectionId
-            }
-            let realizedSet = []
-            Object.keys(obj.sets).forEach(set =>
-                realizedSet = [...realizedSet, set]
-            )
-            //Create the room in memory
-            allRooms.push({
+            var random = obj.sets.includes("randomOrder")
+
+            if(random)
+                obj.sets = obj.sets.filter(s=>s!=="randomOrder")
+
+            var newRoom = {
                 MasterConnection: connectionId,
                 RoomId: roomId,
                 Players: [],
-                Sets: realizedSet
-            })
+                Sets: obj.sets,
+                Random: random,
+                Started: false
+            }
+
+            //Create the room in memory
+            allRooms.push(newRoom)
+
+            // Tell master they are master
+            var payload = {
+                type: "newRoom",
+                Room: newRoom
+            }
             connection.sendUTF(JSON.stringify(payload));
         }
-
         //Must have room from here on out
-        let rooms = allRooms.filter(r => r.MasterConnection === obj.masterConnection || r.RoomId == obj.roomId)
+        let rooms = allRooms.filter(r => r.MasterConnection == obj.masterConnection || r.RoomId == obj.roomId )
         let room = rooms[0]
         if(room === undefined)
             connection.sendUTF(JSON.stringify({ type: 'failed' }))
@@ -78,39 +83,49 @@ wsServer.on('request', function (request) {
         else if (obj.type === 'getRoom') {
             var payload = {
                 type: "gotRoom",
-                roomId: room.RoomId,
+                Room: room,
             }
             connection.sendUTF(JSON.stringify(payload));
-        
         }
         else if (obj.type === 'join') {
-            let userId = generateUserId();
-            var player = {
-                UserId: userId,
+            var newPlayer = {
+                UserId: generateUserId(),
                 Name: obj.name,
                 connectionId: connectionId,
                 Wins: 0
             }
+            if(room.Started){
 
-            room.Players.push(player)
+                var allWhiteCards = Cards.getWhiteCards(room.Sets)
+                let random = [];
+                while (random.length < 7) {
+                    var aNumber = Math.floor(Math.random() * allWhiteCards.length)
+                    if (!random.includes(aNumber)) 
+                        random = [...random, aNumber]
+                }
+                var cards = []
+                random.forEach(item => cards = [...cards, allWhiteCards[item]]);
+                newPlayer.Cards = cards;
+            }
+            room.Players.push(newPlayer)
             var payload = {
                 type: "joined",
-                name: player.Name,
-                userId: userId,
-                masterConnection: room.MasterConnection
+                player: newPlayer,
+                room: room
             }
             //send to master connection
             allConnections[room.MasterConnection].sendUTF(JSON.stringify(payload))
 
-            //send to joining party
-            connection.sendUTF(JSON.stringify(payload))
+            room.Players.forEach(player => 
+                allConnections[player.connectionId].sendUTF(JSON.stringify(payload))
+            )
         
         }
         else if (obj.type === 'bored') {
-            let players = room.Players.filter(player => player.UserId === obj.userId);
+            let player = room.Players.filter(player => player.UserId == obj.userId);
             var payload = {
                 type: 'bored',
-                userId: players[0].Name
+                player: player[0]
             }
             allConnections[room.MasterConnection].sendUTF(JSON.stringify(payload));
         }
@@ -120,6 +135,7 @@ wsServer.on('request', function (request) {
             }
 
             let players = room.Players;
+            room.Started = true;
 
             let allBlackCards = Cards.getBlackCards(room.Sets)
             var randomNumber = Math.floor(Math.random() * allBlackCards.length)
@@ -151,7 +167,7 @@ wsServer.on('request', function (request) {
                 type: 'status',
                 room,
             }
-            if (obj.userId !== undefined) {
+            if (obj.userId) {
                 var player = room.Players.filter(player => player.UserId == obj.userId)[0];
                 payload.cardsInHand = player.Cards;
             }
@@ -177,6 +193,22 @@ wsServer.on('request', function (request) {
             }
             
             allConnections[room.CurrentBlackPlayer.connectionId].send(JSON.stringify(payload));
+
+            room.Players.forEach(player => {
+                allConnections[player.connectionId].send(JSON.stringify(payload));
+            });
+        }
+        else if (obj.type === 'reveal'){
+            var payload = {
+                type: 'reveal',
+                reveal: obj.reveal
+            }
+            
+            allConnections[room.MasterConnection].send(JSON.stringify(payload));
+
+            room.Players.forEach(player => {
+                allConnections[player.connectionId].send(JSON.stringify(payload));
+            });
         }
         else if (obj.type === 'resolve') {
 

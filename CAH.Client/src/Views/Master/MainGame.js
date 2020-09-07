@@ -5,6 +5,7 @@ export default function MainGame(props) {
   const [ players, setPlayers ] = useState([]);
   const [ currentBlackPlayer, setCurrentBlackPlayer ] = useState({});
   const [ answers, setAnswers ] = useState([]);
+  const [ reveal, setReveal ] = useState(0);
 
   const client = useRef(props.ws).current;
 
@@ -41,26 +42,30 @@ export default function MainGame(props) {
       }
     else 
       client.send(JSON.stringify(payload));
-  }, [])
+  }, [client])
 
   client.onmessage = (message) => {
     const obj = JSON.parse(message.data);
+    console.log(obj)
     if(obj.type === "status"){
       setBlackCard(obj.room.BlackCard);
       setPlayers(obj.room.Players)
       setCurrentBlackPlayer(obj.room.CurrentBlackPlayer)
     }
 
+    if(obj.type === "joined")
+      setPlayers([...players, obj.player])
+    
     if(obj.type === "answer"){
 
-      var player = players.filter(s=>s.UserId === obj.userId)[0];
-      var others = players.filter(s=>s.UserId !== obj.userId);
+      var player = players.filter(s=>s.UserId == obj.userId)[0];
+      var others = players.filter(s=>s.UserId != obj.userId);
       player.Done=true;
       player.Answers= obj.answer;
       var updated = [...others, player]
       let donePlayers = updated.filter(s=>s.Done === true);
 
-      if(donePlayers.length === updated.length-1){
+      if(donePlayers.length == updated.length-1){
         let shuffled = shuffle(updated);
         setAnswers(shuffled )
         let masterConnection = localStorage.getItem("masterConnection");
@@ -72,14 +77,37 @@ export default function MainGame(props) {
         client.send(JSON.stringify(payload))
       }
       setPlayers(updated)
-      
+
     }
-    if(obj.type === "newGame"){
+    if(obj.type == "newGame"){
       setBlackCard(obj.room.BlackCard);
       setPlayers(obj.room.Players)
       setCurrentBlackPlayer(obj.room.CurrentBlackPlayer)
       setAnswers([])
+      setReveal(0)
     }
+    if (obj.type === "reveal") 
+      setReveal(obj.reveal)
+    
+  }
+  const Audience = () => {
+    return (
+      <div>
+        <h4>Answers</h4>
+        {
+          answers.map((player, index) => {
+            if (player.Answers !== undefined) {
+              var answer = player.Answers.map(answer => <p>{reveal <= index ? answer.replace(/./g, '*') : answer}</p>)
+              return (
+                <div className="card m-2">
+                  <div className="card-header">Player: {index}</div>
+                  <div className="card-body">{answer}</div>
+                </div>
+              )
+            }
+          })}
+      </div>
+    )
   }
 
 
@@ -93,16 +121,11 @@ export default function MainGame(props) {
             {players.map(player=>{
               return (<li style={{
                 textDecoration: player.Done ? 'line-through' : 'none'
-              }}>{player.UserId === currentBlackPlayer.UserId? "[":""}{player.Name} {player.UserId === currentBlackPlayer.UserId? "]":""} {player.Wins>0?player.Wins:""}</li>)
+              }}>{player.UserId == currentBlackPlayer.UserId? "[":""}{player.Name} {player.UserId == currentBlackPlayer.UserId? "]":""} {player.Wins>0?player.Wins:""}</li>)
             }
             )}
           </ul>
-          {answers.length > 0 && <h4>Answers</h4>}
-          
-          <ul>{answers.map(player=>{
-              if(player.Answers !== undefined)
-                return player.Answers.map(answer => <li>{answer}</li> )
-            })}</ul>
+          {answers.length >0 && <Audience/> }
         </div>
       </div>
     </div>

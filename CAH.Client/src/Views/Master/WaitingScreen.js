@@ -4,7 +4,7 @@ import { Button } from '@material-ui/core';
 
 export default function WaitingScreen(props) {
   const client = useRef(props.ws).current;
-  const [roomId, setRoomId] = useState("");
+  const [room, setRoom] = useState({});
   const [bored, setBored] = useState("");
   const [message, setMessage] = useState("");
   const [players, setPlayers] = useState([]);
@@ -23,25 +23,24 @@ export default function WaitingScreen(props) {
     else
       client.send(JSON.stringify(payload));
 
-  }, [])
+  }, [client])
 
   client.onmessage = (message) => {
     const obj = JSON.parse(message.data);
 
     if (obj.type === "gotRoom")
-      setRoomId(obj.roomId)
+      setRoom(obj.Room)
 
     else if (obj.type === "joined"){
-      var newPlayers = [...players, obj.name]
+      var newPlayers = [...players, obj.player]
       setPlayers(newPlayers);
       if (newPlayers.length > 1) {
         setMessage("");
       }
-
     }
 
     else if (obj.type === "bored")
-      setBored(obj.userId + " is bored!")
+      setBored(obj.player.Name + " is bored!")
 
     else if (obj.type === "start")
       history.push("/Main")
@@ -49,8 +48,8 @@ export default function WaitingScreen(props) {
 
   const onStart = () => {
 
-    // if (players.length > 1) {
-    if (true) {
+    if (players.length > 1) {
+    
       var userId = localStorage.getItem("userId");
       var masterConnection = localStorage.getItem("masterConnection");
 
@@ -73,13 +72,21 @@ export default function WaitingScreen(props) {
       <div className='row'>
         <div className='offset-md-3 col-md-6'>
           <h1>Waiting Room</h1>
-          <sup>Join room with: <b>{roomId}</b></sup>
-          <hr />
-          {bored}
-          <hr />
+          <sup>Room Code: <b>{room.RoomId}</b></sup>
+          <br/>
+          <sup>Sets: <b>{room.Sets !== undefined && room.Sets.map(s=>"["+s+"] ")}</b></sup>
+          <br/>
+          <sup>Random: <b>{room.Random? "Yes": "Nah"}</b></sup>
+          {bored !== "" &&
+            <div className="alert alert-primary">
+              {bored}
+            </div>
+          }
+          <hr/>
+          <h4>Players:</h4>
           <ul>
             {players.map(player =>
-              <li>{player}  </li>
+              <li key={player.UserId}>{player.Name}  </li>
             )}
           </ul>
           <hr />
