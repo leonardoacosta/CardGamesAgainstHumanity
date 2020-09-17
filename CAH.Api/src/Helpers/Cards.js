@@ -30,7 +30,7 @@ export default class Cards {
             return result;
 
         } catch (error) {
-            console.log("Fuck")
+            console.log(error)
         }
     }
 
@@ -46,7 +46,7 @@ export default class Cards {
             return result;
 
         } catch (error) {
-            console.log("Fuck")
+            console.log(error)
         }
     }
 }

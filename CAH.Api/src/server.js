@@ -4,279 +4,323 @@ import 'dotenv';
 import express from 'express';
 import bodyParser from "body-parser";
 import Cards from './Helpers/Cards.js';
-import { readFileSync } from 'fs';
+import { v4 as uuidv4 } from 'uuid';
+import _ from "lodash"
+
 const webSocketServer = require('websocket').server;
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
-app.get("/", (req,res)=>{
+app.get("/", (req, res) => {
     res.send('hello world')
 })
 
 const server = http.createServer(app);
 const wsServer = new webSocketServer({ httpServer: server });
 
-const allConnections = {};
-const allRooms = [];
 
+const allRooms = {};
 const s = () => Math.floor(Math.random() * Math.floor(1000))
 const s4 = () => s() + s() + s() + s()
-
-const generateConnectionId = () => s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4()
-const generateUserId = () => s4() + s4() + s4() + s4()
 const generateRoomId = () => s4()
 
-wsServer.on('request', function (request) {
-
-    const connection = request.accept(null, request.origin);
-    var connectionId = generateConnectionId();
-    allConnections[connectionId] = connection;
-
+wsServer.on('request', function (req) {
+    const connection = req.accept(null, req.origin);
     connection.on('message', function (message) {
-        var obj = JSON.parse(message.utf8Data);
-        console.log("=====")
-        console.log(obj)
+        var request = JSON.parse(message.utf8Data);
+        console.log("=======================================")
+        console.warn(request)
 
-        if (obj.type === 'setup') {
-            var sets = Cards.getPacks();
-            var payload = {
-                type: "setup",
-                sets: sets
-            };
+        let room = allRooms[request.roomId]
+        let payload = {};
 
-            connection.sendUTF(JSON.stringify(payload));
+        if (room == undefined) {
+            switch (request.type) {
+                case "setup":
+                    var sets = Cards.getPacks();
+                    payload = {
+                        type: "setup",
+                        sets: sets
+                    };
+                    connection.sendUTF(JSON.stringify(payload));
+                    break;
+                case "newRoom":
+                    // Create Room
+                    let newRoom = CreateNewRoom(request.room);
+
+                    // Create Player
+                    var newPlayer = CreatePlayer(request.room.name, connection);
+                    newRoom.Players.push(newPlayer);
+                    allRooms[newRoom.RoomId] = newRoom
+
+                    // Tell player About The Room
+                    payload = {
+                        type: "newRoom",
+                        Room: newRoom,
+                        UserId: newPlayer.UserId
+                    }
+                    LetOneKnow(newPlayer, payload)
+                    break;
+                default:
+                    connection.sendUTF(JSON.stringify({ type: 'failed' }))
+                    break;
+            }
         }
-        if (obj.type === 'newRoom') {
-            var roomId = generateRoomId();
-
-            var random = obj.sets.includes("randomOrder")
-
-            if(random)
-                obj.sets = obj.sets.filter(s=>s!=="randomOrder")
-
-            var newRoom = {
-                MasterConnection: connectionId,
-                RoomId: roomId,
-                Players: [],
-                Sets: obj.sets,
-                Random: random,
-                Started: false
-            }
-
-            //Create the room in memory
-            allRooms.push(newRoom)
-
-            // Tell master they are master
-            var payload = {
-                type: "newRoom",
-                Room: newRoom
-            }
-            connection.sendUTF(JSON.stringify(payload));
-        }
-        //Must have room from here on out
-        let rooms = allRooms.filter(r => r.MasterConnection == obj.masterConnection || r.RoomId == obj.roomId )
-        let room = rooms[0]
-        if(room === undefined)
-            connection.sendUTF(JSON.stringify({ type: 'failed' }))
-
-        else if (obj.type === 'getRoom') {
-            var payload = {
-                type: "gotRoom",
-                Room: room,
-            }
-            connection.sendUTF(JSON.stringify(payload));
-        }
-        else if (obj.type === 'join') {
-            var newPlayer = {
-                UserId: generateUserId(),
-                Name: obj.name,
-                connectionId: connectionId,
-                Wins: 0
-            }
-            if(room.Started){
-
-                var allWhiteCards = Cards.getWhiteCards(room.Sets)
-                let random = [];
-                while (random.length < 7) {
-                    var aNumber = Math.floor(Math.random() * allWhiteCards.length)
-                    if (!random.includes(aNumber)) 
-                        random = [...random, aNumber]
-                }
-                var cards = []
-                random.forEach(item => cards = [...cards, allWhiteCards[item]]);
-                newPlayer.Cards = cards;
-            }
-            room.Players.push(newPlayer)
-            var payload = {
-                type: "joined",
-                player: newPlayer,
-                room: room
-            }
-            //send to master connection
-            allConnections[room.MasterConnection].sendUTF(JSON.stringify(payload))
-
-            room.Players.forEach(player => 
-                allConnections[player.connectionId].sendUTF(JSON.stringify(payload))
-            )
-        
-        }
-        else if (obj.type === 'bored') {
-            let player = room.Players.filter(player => player.UserId == obj.userId);
-            var payload = {
-                type: 'bored',
-                player: player[0]
-            }
-            allConnections[room.MasterConnection].sendUTF(JSON.stringify(payload));
-        }
-        else if (obj.type === 'start') {
-            let payload = {
-                type: 'start',
-            }
-
+        else {
             let players = room.Players;
-            room.Started = true;
+            var player = room.Players.filter(p => p.UserId == request.userId)[0]
+            if(player !== undefined)
+                if( !_.isEqual(player.Connection, connection))
+                    player.Connection = connection;
 
-            let allBlackCards = Cards.getBlackCards(room.Sets)
-            var randomNumber = Math.floor(Math.random() * allBlackCards.length)
-            room.BlackCard = allBlackCards[randomNumber];
+            switch (request.type) {
+                case "getRoom":
+                    payload = {
+                        type: "gotRoom",
+                        Room: room,
+                    }
+                    payload.Player = player;
+                    LetOneKnow(player, payload);
+                    break;
+                case "join":
+                    if (player !== undefined) {
+                        payload = {
+                            type: "rejoined",
+                            Player: player,
+                            room
+                        }
+                        LetOneKnow(player, payload);
+                    }
+                    else {
+                        let newPlayer = CreatePlayer(request.name, connection);
+                        if (room.Started)
+                            GivePlayerCards(newPlayer, room);
+                        players.push(newPlayer);
+                        payload = {
+                            type: "joined",
+                            Player: newPlayer,
+                            Room: room
+                        }
+                        LetEveryoneKnow(room, payload);
+                    }
+                    break;
+                case "bored":
+                    var randomColor = Math.floor(Math.random()*16777215).toString(16);
+                    payload = {
+                        type: 'bored',
+                        Player: player,
+                        Color: randomColor
+                    }
+                    LetEveryoneKnow(room, payload)
+                    break;
+                case "like":
+                    let playerAnswer = room.Answers.filter(s=>s.UserId == request.vote)[0];
+                    if(playerAnswer["Liked"] === undefined )
+                        playerAnswer.Liked=1
+                    else
+                        playerAnswer.Liked = playerAnswer.Liked + 1;
+                    payload = {
+                        type: 'liked',
+                        Room: room
+                    }
+                    LetEveryoneKnow(room, payload)
+                    break;
+                case "start":
+                    payload = {
+                        type: 'start',
+                    }
+                    room.Started = true;
 
-            //Select the first black player
-            room.CurrentBlackPlayer = players[Math.floor(Math.random() * players.length)];
-            
-            // Send to Master
-            allConnections[room.MasterConnection].send(JSON.stringify(payload));
+                    SetBlackCard(room);
+                    SetCurrentPlayer(room);
 
-            //Get all white cards, and pass them out randomly
-            var allWhiteCards = Cards.getWhiteCards(room.Sets)
-            players.map(player => {
-                let random = [];
-                while (random.length < 7) {
-                    var aNumber = Math.floor(Math.random() * allWhiteCards.length)
-                    if (!random.includes(aNumber)) 
-                        random = [...random, aNumber]
-                }
-                var cards = []
-                random.forEach(item => cards = [...cards, allWhiteCards[item]]);
-                player.Cards = cards;
-                allConnections[player.connectionId].send(JSON.stringify(payload));
-            });
-        }
-        else if (obj.type === 'status') {
-            var payload = {
-                type: 'status',
-                room,
-            }
-            if (obj.userId) {
-                var player = room.Players.filter(player => player.UserId == obj.userId)[0];
-                payload.cardsInHand = player.Cards;
-            }
-
-            allConnections[connectionId].send(JSON.stringify(payload));
-        }
-        else if (obj.type === 'answer') {
-            var payload = {
-                type: 'answer',
-                userId: obj.userId,
-                answer: obj.answer
-            }
-            var player = room.Players.filter(player => player.UserId == obj.userId)[0];
-            player.Answer = obj.answer;
-
-            allConnections[room.MasterConnection].send(JSON.stringify(payload));
-        }
-        else if (obj.type === 'trial') {
-            var payload = {
-                type: 'trial',
-                shuffeled: obj.shuffled,
-                room
-            }
-            
-            allConnections[room.CurrentBlackPlayer.connectionId].send(JSON.stringify(payload));
-
-            room.Players.forEach(player => {
-                allConnections[player.connectionId].send(JSON.stringify(payload));
-            });
-        }
-        else if (obj.type === 'reveal'){
-            var payload = {
-                type: 'reveal',
-                reveal: obj.reveal
-            }
-            
-            allConnections[room.MasterConnection].send(JSON.stringify(payload));
-
-            room.Players.forEach(player => {
-                allConnections[player.connectionId].send(JSON.stringify(payload));
-            });
-        }
-        else if (obj.type === 'resolve') {
-
-            var players = room.Players;
-
-            //Give the winner a point
-            var player = room.Players.filter(player => player.UserId == obj.winner)[0];
-            player.Wins = player.Wins+1;
-
-            //Next Round
-            //Choose New Black Card Player
-            var lastBlackCard = room.Players.indexOf(room.CurrentBlackPlayer);
-            let newIndex = 0;
-            if(lastBlackCard != room.Players.length-1 )
-                newIndex = lastBlackCard+1;
-                
-            room.CurrentBlackPlayer = room.Players[newIndex];
-
-            //Choose New Black Card
-            let allBlackCards = Cards.getBlackCards(room.Sets)
-            var randomNumber = Math.floor(Math.random() * allBlackCards.length)
-            room.BlackCard = allBlackCards[randomNumber];
-
-            let payload = {
-                type: 'newGame',
-                room
-            }
-            // Tell master about new Game with new black players and card
-            allConnections[room.MasterConnection].send(JSON.stringify(payload));
-
-            //Replace used cards
-            var allWhiteCards = Cards.getWhiteCards(room.Sets)
-            players.map(player => {
-
-                //Remove used cards from hand
-                if(player.Answer !== undefined){
-                    player.Answer.forEach(answer=>{
-                        console.log("Card I need to give up",{answer})
-                        player.Cards = player.Cards.filter(card => card !== answer)
-                        console.log("I gave up the card",player.Cards)
+                    players.forEach(p => {
+                        GivePlayerCards(p, room);
+                        LetOneKnow(p, payload);
                     })
-                }
-                player.Answer = [];
+                    break;
+                case "answer":
+                    // Save answer
+                    player.Answer = request.answer;
+                    room.Answers.push(player)
 
-                // Grab new numbers
-                let random = [];
-                while (random.length <  7 - player.Cards.length) {
-                    var aNumber = Math.floor(Math.random() * allWhiteCards.length)
-                    if (!random.includes(aNumber)) 
-                        random = [...random, aNumber]
-                }
-                console.log(7 - player.Cards.length)
-                console.log("Random Number I drew",{random})
+                    // Is Round Over?
+                    if (room.Answers.length >= players.length - 1) {
+                        room.Answers = shuffle(room.Answers)
+                        room.Reveal = 0
+                        payload = {
+                            type: 'trial',
+                            Room: room,
+                        }
+                        LetEveryoneKnow(room, payload)
+                    }
+                    else {
+                        payload = {
+                            type: 'answer',
+                            Player: player
+                        }
+                        LetEveryoneKnow(room, payload)
+                    }
+                    break;
+                case "reveal":
+                    room.Reveal = request.reveal
+                    payload = {
+                        type: 'reveal',
+                        reveal: request.reveal  // this should be a number
+                    }
+                    LetEveryoneKnow(room, payload)
+                    break;
+                case "resolve":
+                    //Give the winner a point
+                    let winner = players.filter(player => player.UserId == request.winner)[0];
+                    winner.Wins = player.Wins + 1;
 
-                // Grab the cooresponding cards
-                random.forEach(item => player.Cards.push( allWhiteCards[item]));
-                console.log("My new hand",player.Cards)
+                    let lastplayer = players.indexOf(room.CurrentPlayer);
+                    let newIndex = 0;
+                    if (lastplayer != players.length - 1)
+                        newIndex = lastplayer + 1;
 
-                payload.cardsInHand = player.Cards;
-                allConnections[player.connectionId].send(JSON.stringify(payload));
-            });
+                    room.CurrentPlayer = players[newIndex];
+                    room.Answers = [];
+                    room.Reveal = null;
 
+                    //Choose New Black Card
+                    SetBlackCard(room);
+
+                    payload = {
+                        type: 'newGame',
+                        Room: room
+                    }
+                    players.map(p => {
+                        delete p.Liked
+                        Discard(p);
+                        GivePlayerCards(p, room);
+
+                        payload.Player = p;
+
+                        LetOneKnow(p, payload)
+                    });
+                    break;
+                default:
+                    connection.sendUTF(JSON.stringify({ type: 'failed' }))
+                    break;
+            }
         }
-        
+        console.warn("++++++++++++++++++++++++++++++++")
+        console.warn({ payload })
     })
 });
 
-server.listen(process.env.PORT || 8000, () => {
-    console.log(`Server started on port ${server.address().port} :)`);
-});
+const CreatePlayer = (name, connection) => {
+    var userId = uuidv4() + "-" + uuidv4();
+    return {
+        Name: name,
+        UserId: userId,
+        Wins: 0,
+        CardsInHand: [],
+        Connection: connection
+    }
+}
 
+const CreateNewRoom = (obj) => {
+    var roomId = generateRoomId();
+    var random = obj.Sets.includes("randomOrder")
+    var open = obj.Sets.includes("public")
+
+    obj.Sets = obj.Sets.filter(s => s != "public");
+    obj.Sets = obj.Sets.filter(s => s != "randomOrder");
+
+    let newRoom = {
+        RoomId: roomId,
+        Players: [],
+        Sets: obj.Sets,
+        Random: random,
+        Started: false,
+        Public: open,
+        HandSize: obj.cards,
+        CurrentCard: "",
+        CurrentPlayer: {},
+        Answers: [],
+        Reveal: null
+    }
+    allRooms[roomId] = newRoom;
+    return newRoom;
+}
+
+const GivePlayerCards = (player, room) => {
+    var allWhiteCards = Cards.getWhiteCards(room.Sets)
+    let random = [];
+
+    while (random.length < room.HandSize - player.CardsInHand.length) {
+        var aNumber = Math.floor(Math.random() * allWhiteCards.length)
+        if (!random.includes(aNumber))
+            random = [...random, aNumber]
+    }
+
+    random.forEach(item => player.CardsInHand.push(allWhiteCards[item]));
+}
+
+const clearCircle = (key, value) => {
+        if (key == "Connection") 
+            return;
+        return value;
+}
+
+const LetEveryoneKnow = (room, payload) => {
+    var clean = _.cloneDeep(payload);// JSON.parse(JSON.stringify(payload));
+    room.Players.forEach(p => p.Connection.send(JSON.stringify(clean, clearCircle)));
+}
+
+const LetOneKnow = (player, payload) => {
+    var clean = _.cloneDeep(payload);// JSON.parse(JSON.stringify(payload));
+    player.Connection.sendUTF(JSON.stringify(clean, clearCircle));
+}
+
+const SetBlackCard = (room) => {
+    let lastcard = room.CurrentCard;
+    let allBlackCards = Cards.getBlackCards(room.Sets)
+
+    while (lastcard == room.CurrentCard) {
+        var randomNumber = Math.floor(Math.random() * allBlackCards.length)
+        room.CurrentCard = allBlackCards[randomNumber];
+    }
+}
+
+const SetCurrentPlayer = room => {
+    let players = room.Players;
+    room.CurrentPlayer = players[Math.floor(Math.random() * players.length)];
+}
+
+const Discard = player => {
+    if (player.Answer !== undefined) {
+        player.Answer.map(answer => {
+            player.CardsInHand = player.CardsInHand.filter(card => card !== answer)
+        })
+    }
+    player.Answer = [];
+}
+
+
+const shuffle = (array) => {
+    var currentIndex = array.length, temporaryValue, randomIndex;
+
+    // While there remain elements to shuffle...
+    while (0 !== currentIndex) {
+
+        // Pick a remaining element...
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex -= 1;
+
+        // And swap it with the current element.
+        temporaryValue = array[currentIndex];
+        array[currentIndex] = array[randomIndex];
+        array[randomIndex] = temporaryValue;
+    }
+
+    return array;
+}
+
+server.listen(process.env.PORT || 8000, () => {
+    console.log(`Server started on port ${server.address().port} <3`);
+});

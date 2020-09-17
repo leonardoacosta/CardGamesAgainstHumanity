@@ -1,37 +1,41 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   BrowserRouter as Router,
   Switch,
-  Route } from "react-router-dom";
+  Route
+} from "react-router-dom";
 import { w3cwebsocket as W3CWebSocket } from "websocket";
 
 import SplashPage from './Views/SplashPage';
-import Setup from './Views/Master/Setup';
-import WaitingScreen from './Views/Master/WaitingScreen';
-import MainGame from './Views/Master/MainGame';
-import Game from './Views/Client/Game';
-import Lobby from './Views/Client/Lobby';
+import Setup from './Views/Setup';
+import Lobby from './Views/Lobby';
+import Game from './Views/Game';
+import Loading from './Views/Loading';
 
-const client = new W3CWebSocket('ws://localhost:8000');
-//const client = new W3CWebSocket('wss://cardgamesagainsthumanity.azurewebsites.net/');
-
+// const client = new W3CWebSocket('wss://cardgamesagainsthumanity.azurewebsites.net/');
+const client = new W3CWebSocket('ws://localhost:8000/');
 
 export default function App() {
-  
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    client.onopen = () => {
+      setOpen(true);
+    };
+  }, []);
+
+
+  if (!open)
+    return (<Loading />)
+
   return (
     <Router>
-        <Switch>
-          <Route exact path="/" render={props => <SplashPage {...props} ws={client}/>}/>
-          <Route exact path="/Setup"render={props => <Setup {...props} ws={client}/>}/> 
-
-          {/* Must be authenticated from here on out */}
-          <Route exact path="/WaitingScreen"render={props => <WaitingScreen {...props} ws={client}/>}/> 
-          <Route exact path="/Lobby"render={props => <Lobby {...props} ws={client}/>}/> 
-
-          {/* The Game */}
-          <Route exact path="/Main"render={props => <MainGame {...props} ws={client}/>}/> 
-          <Route exact path="/Game"render={props => <Game {...props} ws={client}/>}/> 
-        </Switch>
+      <Switch>
+        <Route exact path="/" render={props => <SplashPage {...props} ws={client} />} />
+        <Route exact path="/Setup" render={props => <Setup {...props} ws={client} />} />
+        <Route exact path="/Lobby" render={props => <Lobby {...props} ws={client} />} />
+        <Route exact path="/Game" render={props => <Game {...props} ws={client} />} />
+      </Switch>
     </Router>
   )
 }
