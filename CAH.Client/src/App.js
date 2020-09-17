@@ -10,10 +10,10 @@ import SplashPage from './Views/SplashPage';
 import Setup from './Views/Setup';
 import Lobby from './Views/Lobby';
 import Game from './Views/Game';
-import Loading from './Views/Loading';
+import Loading from './components/Loading';
 
-// const client = new W3CWebSocket('wss://cardgamesagainsthumanity.azurewebsites.net/');
-const client = new W3CWebSocket('ws://localhost:8000/');
+const client = new W3CWebSocket('wss://cardgamesagainsthumanity.azurewebsites.net/');
+//const client = new W3CWebSocket('ws://localhost:8000/');
 
 export default function App() {
   const [open, setOpen] = useState(false);
@@ -23,7 +23,6 @@ export default function App() {
       setOpen(true);
     };
   }, []);
-
 
   if (!open)
     return (<Loading />)

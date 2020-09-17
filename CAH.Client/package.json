@@ -1,5 +1,5 @@
 {
-  "name": "Card Games Against Humanity Online",
+  "name": "cah.client",
   "version": "0.8.0",
   "private": true,
   "dependencies": {
