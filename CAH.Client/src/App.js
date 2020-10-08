@@ -12,8 +12,8 @@ import Lobby from './Views/Lobby';
 import Game from './Views/Game';
 import Loading from './components/Loading';
 
+//const client = new W3CWebSocket('ws://localhost:8000');
 const client = new W3CWebSocket('wss://cardgamesagainsthumanity.azurewebsites.net/');
-//const client = new W3CWebSocket('ws://localhost:8000/');
 
 export default function App() {
   const [open, setOpen] = useState(false);
